@@ -1,0 +1,14 @@
+# Install once with:
+#   pip install pre-commit
+#   pre-commit install
+#
+# After that, every `git commit` automatically scans staged changes for
+# things that look like secrets (API keys, tokens, private keys) and
+# blocks the commit if it finds any -- a real safety net on top of
+# .gitignore, since .gitignore only helps if you never `git add -f` a
+# secret file by mistake.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

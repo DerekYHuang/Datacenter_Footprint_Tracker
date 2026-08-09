@@ -1,0 +1,32 @@
+# --- Secrets: never commit these ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- Data (raw pulls and warehouse files can be large / sensitive-ish, keep local only) ---
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.duckdb
+*.sqlite
+
+# --- Notebooks checkpoints ---
+.ipynb_checkpoints/
+
+# --- OS / editor cruft ---
+.DS_Store
+.vscode/
+.idea/
