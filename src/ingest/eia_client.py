@@ -99,6 +99,12 @@ class EIAClient:
             "frequency": "hourly",
             "data[0]": "value",
             "facets[respondent][]": balancing_authority,
+            # region-data mixes demand (D), net generation (NG), total
+            # interchange (TI), and demand forecast (DF) in one endpoint,
+            # distinguished only by this "type" facet. Without filtering
+            # to "D", interchange's negative values get plotted as if
+            # they were part of the demand series.
+            "facets[type][]": "D",
             "start": start,
             "end": end,
             "sort[0][column]": "period",

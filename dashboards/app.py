@@ -12,6 +12,14 @@ credentials.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Streamlit only adds this script's own folder (dashboards/) to sys.path,
+# not the project root -- so "config" and "src" aren't importable unless
+# we add the root ourselves. This must happen before the local imports below.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import duckdb
 import pandas as pd
 import plotly.express as px

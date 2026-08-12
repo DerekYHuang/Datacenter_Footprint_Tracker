@@ -34,6 +34,7 @@ from src.utils.logging_config import get_logger
 # Virginia/Texas data center clusters mentioned in the research.
 DEFAULT_BALANCING_AUTHORITY = "CISO"
 DEFAULT_STATE = "CA"
+DEFAULT_COUNTY = "Santa Clara"
 
 
 def main() -> None:
@@ -59,9 +60,11 @@ def main() -> None:
     load_eia_retail_price(settings, normalize_eia_retail_price(raw_price))
     logger.info("Loaded %d retail price rows", len(raw_price))
 
-    logger.info("Pulling EPA FRS facilities for %s...", DEFAULT_STATE)
+    logger.info("Pulling EPA FRS facilities for %s County, %s...", DEFAULT_COUNTY, DEFAULT_STATE)
     envirofacts = EnvirofactsClient(settings=settings)
-    raw_facilities = envirofacts.get_facilities_by_state(DEFAULT_STATE, rows=500)
+    raw_facilities = envirofacts.get_facilities(
+        state_abbr=DEFAULT_STATE, county_name=DEFAULT_COUNTY
+    )
     load_epa_frs_facilities(settings, normalize_epa_frs_facilities(raw_facilities))
     logger.info("Loaded %d facility rows", len(raw_facilities))
 

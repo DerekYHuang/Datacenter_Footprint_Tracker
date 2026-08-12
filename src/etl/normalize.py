@@ -38,17 +38,60 @@ def normalize_eia_retail_price(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    The FRS Facility Search API's exact field names aren't fully pinned
+    down in public docs and can vary in casing/format. This picks the
+    first matching column (case-insensitive, ignoring underscores) for
+    each target field rather than assuming one exact name, and logs any
+    field it can't find so the mapping can be corrected once you've seen
+    a real response (`python -m src.ingest.envirofacts_client`).
+    """
     if raw.empty:
         return raw
 
+    def _find(df: pd.DataFrame, candidates: list[str]):
+        normalized_cols = {c.replace("_", "").upper(): c for c in df.columns}
+        for candidate in candidates:
+            key = candidate.replace("_", "").upper()
+            if key in normalized_cols:
+                return df[normalized_cols[key]]
+        return None
+
     out = pd.DataFrame()
-    out["registry_id"] = raw.get("REGISTRY_ID")
-    out["primary_name"] = raw.get("PRIMARY_NAME")
-    out["location_address"] = raw.get("LOCATION_ADDRESS")
-    out["city_name"] = raw.get("CITY_NAME")
-    out["county_name"] = raw.get("COUNTY_NAME")
-    out["state_code"] = raw.get("STATE_CODE")
-    out["latitude83"] = pd.to_numeric(raw.get("LATITUDE83"), errors="coerce")
-    out["longitude83"] = pd.to_numeric(raw.get("LONGITUDE83"), errors="coerce")
-    out["pulled_at"] = raw.get("pulled_at")
+    field_map = {
+        "registry_id": ["REGISTRY_ID", "RegistryId", "TRI_FACILITY_ID", "TRIFID"],
+        "primary_name": ["PRIMARY_NAME", "FacilityName", "PrimaryName", "FACILITY_NAME"],
+        "location_address": [
+            "LOCATION_ADDRESS", "Address", "LocationAddress", "STREET_ADDRESS",
+        ],
+        "city_name": ["CITY_NAME", "City", "CityName"],
+        "county_name": ["COUNTY_NAME", "County", "CountyName"],
+        "state_code": ["STATE_CODE", "State", "StateCode", "StateAbbr", "STATE_ABBR"],
+        "latitude83": ["LATITUDE83", "Latitude", "Latitude83", "LATITUDE"],
+        "longitude83": ["LONGITUDE83", "Longitude", "Longitude83", "LONGITUDE"],
+    }
+
+    missing = []
+    for target, candidates in field_map.items():
+        col = _find(raw, candidates)
+        if col is None:
+            missing.append(target)
+            out[target] = None
+        else:
+            out[target] = col
+
+    if missing:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Could not find columns for %s in FRS response (available: %s). "
+            "Update field_map in normalize_epa_frs_facilities once you've "
+            "inspected a real payload.",
+            missing,
+            list(raw.columns),
+        )
+
+    out["latitude83"] = pd.to_numeric(out["latitude83"], errors="coerce")
+    out["longitude83"] = pd.to_numeric(out["longitude83"], errors="coerce")
+    out["pulled_at"] = raw.get("PULLED_AT", raw.get("pulled_at"))
     return out
