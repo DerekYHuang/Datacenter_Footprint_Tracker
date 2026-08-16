@@ -59,16 +59,16 @@ def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
 
     out = pd.DataFrame()
     field_map = {
-        "registry_id": ["REGISTRY_ID", "RegistryId", "TRI_FACILITY_ID", "TRIFID"],
-        "primary_name": ["PRIMARY_NAME", "FacilityName", "PrimaryName", "FACILITY_NAME"],
-        "location_address": [
-            "LOCATION_ADDRESS", "Address", "LocationAddress", "STREET_ADDRESS",
-        ],
-        "city_name": ["CITY_NAME", "City", "CityName"],
-        "county_name": ["COUNTY_NAME", "County", "CountyName"],
-        "state_code": ["STATE_CODE", "State", "StateCode", "StateAbbr", "STATE_ABBR"],
-        "latitude83": ["LATITUDE83", "Latitude", "Latitude83", "LATITUDE"],
-        "longitude83": ["LONGITUDE83", "Longitude", "Longitude83", "LONGITUDE"],
+        "registry_id": ["EPA_REGISTRY_ID", "TRI_FACILITY_ID", "REGISTRY_ID"],
+        "primary_name": ["FACILITY_NAME", "PRIMARY_NAME"],
+        "location_address": ["STREET_ADDRESS", "LOCATION_ADDRESS"],
+        "city_name": ["CITY_NAME"],
+        "county_name": ["COUNTY_NAME"],
+        "state_code": ["STATE_ABBR", "STATE_CODE"],
+        # Prefer PREF_LATITUDE/LONGITUDE (EPA's cleaned-up "best available"
+        # coordinate), fall back to raw FAC_LATITUDE/LONGITUDE if missing.
+        "latitude83": ["PREF_LATITUDE", "FAC_LATITUDE"],
+        "longitude83": ["PREF_LONGITUDE", "FAC_LONGITUDE"],
     }
 
     missing = []
