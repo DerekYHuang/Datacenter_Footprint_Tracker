@@ -7,6 +7,8 @@ if EIA renames a field, you fix it in exactly one place.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 
 
@@ -37,25 +39,33 @@ def normalize_eia_retail_price(raw: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _coalesce(df: pd.DataFrame, candidates: list[str]):
+    """
+    Row-by-row fallback across candidate columns -- e.g. prefer
+    PREF_LATITUDE but fill in from FAC_LATITUDE wherever PREF_LATITUDE is
+    blank for that row. TRI's PREF_* fields are sparsely populated, so
+    just grabbing "the first column that exists" (rather than falling
+    back per-row) silently drops most of the coordinates.
+    """
+    normalized_cols = {c.replace("_", "").upper(): c for c in df.columns}
+    result = None
+    for candidate in candidates:
+        key = candidate.replace("_", "").upper()
+        if key in normalized_cols:
+            col = df[normalized_cols[key]]
+            result = col if result is None else result.combine_first(col)
+    return result
+
+
 def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
     """
-    The FRS Facility Search API's exact field names aren't fully pinned
-    down in public docs and can vary in casing/format. This picks the
-    first matching column (case-insensitive, ignoring underscores) for
-    each target field rather than assuming one exact name, and logs any
-    field it can't find so the mapping can be corrected once you've seen
-    a real response (`python -m src.ingest.envirofacts_client`).
+    Maps EPA TRI_FACILITY columns into the stable warehouse schema.
+    Uses row-wise coalescing (see _coalesce) so sparse "preferred"
+    coordinate columns fall back to raw coordinate columns per-row
+    instead of dropping rows where only one of the two is populated.
     """
     if raw.empty:
         return raw
-
-    def _find(df: pd.DataFrame, candidates: list[str]):
-        normalized_cols = {c.replace("_", "").upper(): c for c in df.columns}
-        for candidate in candidates:
-            key = candidate.replace("_", "").upper()
-            if key in normalized_cols:
-                return df[normalized_cols[key]]
-        return None
 
     out = pd.DataFrame()
     field_map = {
@@ -66,14 +76,15 @@ def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
         "county_name": ["COUNTY_NAME"],
         "state_code": ["STATE_ABBR", "STATE_CODE"],
         # Prefer PREF_LATITUDE/LONGITUDE (EPA's cleaned-up "best available"
-        # coordinate), fall back to raw FAC_LATITUDE/LONGITUDE if missing.
+        # coordinate), fall back row-by-row to FAC_LATITUDE/LONGITUDE
+        # wherever PREF_* is blank.
         "latitude83": ["PREF_LATITUDE", "FAC_LATITUDE"],
         "longitude83": ["PREF_LONGITUDE", "FAC_LONGITUDE"],
     }
 
     missing = []
     for target, candidates in field_map.items():
-        col = _find(raw, candidates)
+        col = _coalesce(raw, candidates)
         if col is None:
             missing.append(target)
             out[target] = None
@@ -81,8 +92,6 @@ def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
             out[target] = col
 
     if missing:
-        import logging
-
         logging.getLogger(__name__).warning(
             "Could not find columns for %s in FRS response (available: %s). "
             "Update field_map in normalize_epa_frs_facilities once you've "
@@ -93,5 +102,11 @@ def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
 
     out["latitude83"] = pd.to_numeric(out["latitude83"], errors="coerce")
     out["longitude83"] = pd.to_numeric(out["longitude83"], errors="coerce")
+    # TRI stores US longitude as an unsigned magnitude (e.g. 121.83 instead
+    # of -121.83). Every TRI facility is in the Western hemisphere, so any
+    # positive value here is a sign error, not a real eastern-hemisphere
+    # coordinate -- negate it. (This is what put facilities in China/Korea
+    # on the map instead of California.)
+    out["longitude83"] = out["longitude83"].abs() * -1
     out["pulled_at"] = raw.get("PULLED_AT", raw.get("pulled_at"))
     return out
