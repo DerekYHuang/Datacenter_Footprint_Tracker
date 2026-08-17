@@ -35,10 +35,10 @@ def init_schema(settings: Settings) -> None:
 def _write(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame) -> None:
     if df.empty:
         return
+    con.execute(f"DELETE FROM {table}")  # clear stale data from prior runs first
     con.register("tmp_df", df)
     con.execute(f"INSERT INTO {table} SELECT * FROM tmp_df")
     con.unregister("tmp_df")
-
 
 def load_eia_hourly_demand(settings: Settings, df: pd.DataFrame) -> None:
     con = duckdb.connect(settings.duckdb_path)

@@ -74,16 +74,13 @@ facilities_df: pd.DataFrame = con.execute(
 if facilities_df.empty:
     st.info("No facility data yet -- run `python run_pipeline.py` first.")
 else:
-    fig = px.scatter_mapbox(
-        facilities_df,
-        lat="latitude83",
-        lon="longitude83",
-        hover_name="primary_name",
-        hover_data=["city_name", "county_name"],
-        zoom=6,
-        height=500,
-    )
-    fig.update_layout(mapbox_style="open-street-map")
-    st.plotly_chart(fig, use_container_width=True)
+    map_df = facilities_df.rename(columns={"latitude83": "lat", "longitude83": "lon"})
+    st.map(map_df, latitude="lat", longitude="lon", size=20)
+    st.caption(f"{len(map_df)} registered facilities shown.")
+    with st.expander("View facility list"):
+        st.dataframe(
+            facilities_df[["primary_name", "city_name", "county_name"]],
+            use_container_width=True,
+        )
 
 con.close()
