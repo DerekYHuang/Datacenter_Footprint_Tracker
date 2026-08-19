@@ -24,6 +24,7 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import pydeck as pdk
 
 from config.settings import get_settings
 
@@ -74,9 +75,38 @@ facilities_df: pd.DataFrame = con.execute(
 if facilities_df.empty:
     st.info("No facility data yet -- run `python run_pipeline.py` first.")
 else:
+    # debugging for the map: st.write(map_df[["lat", "lon"]].describe())
     map_df = facilities_df.rename(columns={"latitude83": "lat", "longitude83": "lon"})
-    st.map(map_df, latitude="lat", longitude="lon", size=20)
-    st.caption(f"{len(map_df)} registered facilities shown.")
+    map_df = map_df.dropna(subset=["lat", "lon"])
+
+    if map_df.empty:
+        st.warning("Facility data loaded, but none have usable coordinates yet.")
+    else:
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=map_df,
+            get_position="[lon, lat]",
+            get_radius=150,
+            get_fill_color=[255, 90, 60, 180],
+            pickable=True,
+        )
+        view_state = pdk.ViewState(
+            latitude=map_df["lat"].mean(),
+            longitude=map_df["lon"].mean(),
+            zoom=9,
+        )
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            map_style="dark",
+            tooltip={
+                "html": "<b>{primary_name}</b><br/>{city_name}, {county_name}",
+                "style": {"backgroundColor": "steelblue", "color": "white"},
+            },
+        )
+        st.pydeck_chart(deck)
+        st.caption(f"{len(map_df)} of {len(facilities_df)} facilities have mappable coordinates.")
+
     with st.expander("View facility list"):
         st.dataframe(
             facilities_df[["primary_name", "city_name", "county_name"]],

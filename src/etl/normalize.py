@@ -102,11 +102,11 @@ def normalize_epa_frs_facilities(raw: pd.DataFrame) -> pd.DataFrame:
 
     out["latitude83"] = pd.to_numeric(out["latitude83"], errors="coerce")
     out["longitude83"] = pd.to_numeric(out["longitude83"], errors="coerce")
-    # TRI stores US longitude as an unsigned magnitude (e.g. 121.83 instead
-    # of -121.83). Every TRI facility is in the Western hemisphere, so any
-    # positive value here is a sign error, not a real eastern-hemisphere
-    # coordinate -- negate it. (This is what put facilities in China/Korea
-    # on the map instead of California.)
     out["longitude83"] = out["longitude83"].abs() * -1
+
+    valid_lat = out["latitude83"].between(32, 42)
+    valid_lon = out["longitude83"].between(-125, -114)
+    out.loc[~(valid_lat & valid_lon), ["latitude83", "longitude83"]] = None
+
     out["pulled_at"] = raw.get("PULLED_AT", raw.get("pulled_at"))
     return out
