@@ -45,6 +45,51 @@ def test_get_retail_price_parses_rows():
 
 
 @responses.activate
+def test_get_retail_sales_parses_rows():
+    responses.add(
+        responses.GET,
+        "https://api.eia.gov/v2/electricity/retail-sales/data/",
+        json={
+            "response": {
+                "data": [
+                    {"period": "2026-01", "stateid": "CA", "sectorid": "ALL", "sales": 20000.0},
+                ]
+            }
+        },
+        status=200,
+    )
+
+    client = EIAClient(settings=FAKE_SETTINGS)
+    df = client.get_retail_sales(state="CA")
+
+    assert len(df) == 1
+    assert df.iloc[0]["sales"] == 20000.0
+
+
+@responses.activate
+def test_get_hourly_demand_filters_type_d():
+    responses.add(
+        responses.GET,
+        "https://api.eia.gov/v2/electricity/rto/region-data/data/",
+        json={
+            "response": {
+                "data": [
+                    {"period": "2026-08-01T00", "respondent": "CISO", "value": 25000},
+                ]
+            }
+        },
+        status=200,
+    )
+
+    client = EIAClient(settings=FAKE_SETTINGS)
+    df = client.get_hourly_demand("CISO", "2026-08-01T00", "2026-08-02T00")
+
+    request_url = responses.calls[0].request.url
+    assert "facets%5Btype%5D%5B%5D=D" in request_url or "facets[type][]=D" in request_url
+    assert len(df) == 1
+
+
+@responses.activate
 def test_get_retail_price_handles_empty_response():
     responses.add(
         responses.GET,

@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS eia_retail_price (
     pulled_at       TIMESTAMP
 );
 
+-- Monthly electricity consumption (million kWh), same endpoint/geography
+-- as eia_retail_price but a different data field. Paired with price for
+-- the demand-growth vs. price-growth correlation analysis.
+CREATE TABLE IF NOT EXISTS eia_retail_sales (
+    period          DATE,
+    stateid         VARCHAR,
+    sectorid        VARCHAR,
+    sales           DOUBLE,        -- million kWh
+    pulled_at       TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS epa_frs_facilities (
     registry_id     VARCHAR,
     primary_name    VARCHAR,

@@ -152,6 +152,31 @@ class EIAClient:
             df["pulled_at"] = pd.Timestamp.now('UTC')
         return df
 
+    def get_retail_sales(self, state: str, sector: str = "ALL") -> pd.DataFrame:
+        """
+        Monthly electricity CONSUMPTION (sales, in million kWh) by
+        state/sector, same endpoint as get_retail_price, different data
+        field. Used to correlate consumption growth against price growth
+        over the long run -- the hourly demand endpoint only covers ~30
+        days of recent history, not enough for a multi-year comparison.
+        """
+        params = {
+            "frequency": "monthly",
+            "data[0]": "sales",
+            "facets[stateid][]": state,
+            "facets[sectorid][]": sector,
+            "sort[0][column]": "period",
+            "sort[0][direction]": "asc",
+            "offset": 0,
+            "length": 5000,
+        }
+        payload = self._get("/electricity/retail-sales/data/", params)
+        rows = payload.get("response", {}).get("data", [])
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df["pulled_at"] = pd.Timestamp.now('UTC')
+        return df
+
 
 if __name__ == "__main__":
     # Small manual smoke test. Run with: python -m src.ingest.eia_client
@@ -159,5 +184,5 @@ if __name__ == "__main__":
 
     settings = get_settings(require_eia=True)
     client = EIAClient(settings=settings)
-    demo = client.get_retail_price(state="CA")
+    demo = client.get_retail_sales(state="CA")
     print(demo.head())

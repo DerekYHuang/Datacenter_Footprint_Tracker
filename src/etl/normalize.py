@@ -39,6 +39,19 @@ def normalize_eia_retail_price(raw: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def normalize_eia_retail_sales(raw: pd.DataFrame) -> pd.DataFrame:
+    if raw.empty:
+        return raw
+
+    out = pd.DataFrame()
+    out["period"] = pd.to_datetime(raw.get("period"), format="%Y-%m", errors="coerce")
+    out["stateid"] = raw.get("stateid")
+    out["sectorid"] = raw.get("sectorid")
+    out["sales"] = pd.to_numeric(raw.get("sales"), errors="coerce")
+    out["pulled_at"] = raw.get("pulled_at")
+    return out
+
+
 def _coalesce(df: pd.DataFrame, candidates: list[str]):
     """
     Row-by-row fallback across candidate columns -- e.g. prefer

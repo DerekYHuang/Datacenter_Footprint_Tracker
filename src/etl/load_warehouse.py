@@ -56,6 +56,14 @@ def load_eia_retail_price(settings: Settings, df: pd.DataFrame) -> None:
         con.close()
 
 
+def load_eia_retail_sales(settings: Settings, df: pd.DataFrame) -> None:
+    con = duckdb.connect(settings.duckdb_path)
+    try:
+        _write(con, "eia_retail_sales", df)
+    finally:
+        con.close()
+
+
 def load_epa_frs_facilities(settings: Settings, df: pd.DataFrame) -> None:
     con = duckdb.connect(settings.duckdb_path)
     try:

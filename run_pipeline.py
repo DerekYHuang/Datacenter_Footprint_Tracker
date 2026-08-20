@@ -17,12 +17,14 @@ from src.etl.load_warehouse import (
     init_schema,
     load_eia_hourly_demand,
     load_eia_retail_price,
+    load_eia_retail_sales,
     load_epa_frs_facilities,
     load_sustainability_metrics,
 )
 from src.etl.normalize import (
     normalize_eia_hourly_demand,
     normalize_eia_retail_price,
+    normalize_eia_retail_sales,
     normalize_epa_frs_facilities,
 )
 from src.ingest.eia_client import EIAClient
@@ -44,7 +46,7 @@ def main() -> None:
     logger.info("Initializing warehouse schema...")
     init_schema(settings)
 
-    end = dt.datetime.utcnow()
+    end = dt.datetime.now(dt.timezone.utc)
     start = end - dt.timedelta(days=30)
     start_str = start.strftime("%Y-%m-%dT%H")
     end_str = end.strftime("%Y-%m-%dT%H")
@@ -59,6 +61,11 @@ def main() -> None:
     raw_price = eia.get_retail_price(DEFAULT_STATE)
     load_eia_retail_price(settings, normalize_eia_retail_price(raw_price))
     logger.info("Loaded %d retail price rows", len(raw_price))
+
+    logger.info("Pulling EIA retail sales (consumption) for %s...", DEFAULT_STATE)
+    raw_sales = eia.get_retail_sales(DEFAULT_STATE)
+    load_eia_retail_sales(settings, normalize_eia_retail_sales(raw_sales))
+    logger.info("Loaded %d retail sales rows", len(raw_sales))
 
     logger.info("Pulling EPA FRS facilities for %s County, %s...", DEFAULT_COUNTY, DEFAULT_STATE)
     envirofacts = EnvirofactsClient(settings=settings)

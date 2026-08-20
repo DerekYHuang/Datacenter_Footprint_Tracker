@@ -23,10 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import duckdb
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 import pydeck as pdk
 
 from config.settings import get_settings
+from src.analysis.correlation import compute_demand_price_correlation
+from src.analysis.forecast import forecast_retail_price
 
 st.set_page_config(page_title="Data Center Energy & Water Footprint", layout="wide")
 
@@ -38,6 +41,38 @@ st.caption(
     "Regional electricity demand, retail pricing, and industrial facility "
     "density -- built to explore the community impact of data center growth."
 )
+
+# ---------------------------------------------------------------------------
+# KPI summary row
+# ---------------------------------------------------------------------------
+price_summary = con.execute(
+    "SELECT MIN(price) AS min_p, MAX(price) AS max_p FROM eia_retail_price"
+).fetchdf()
+demand_summary = con.execute(
+    "SELECT MAX(value) AS peak FROM eia_hourly_demand"
+).fetchdf()
+facility_count = con.execute(
+    "SELECT COUNT(*) AS n FROM epa_frs_facilities WHERE latitude83 IS NOT NULL"
+).fetchdf()
+
+kpi1, kpi2, kpi3 = st.columns(3)
+with kpi1:
+    if not price_summary.empty and pd.notna(price_summary["max_p"].iloc[0]):
+        min_p, max_p = price_summary["min_p"].iloc[0], price_summary["max_p"].iloc[0]
+        pct_change = (max_p / min_p - 1) * 100 if min_p else 0
+        st.metric("CA retail price growth (full history)", f"+{pct_change:.0f}%")
+    else:
+        st.metric("CA retail price growth", "—")
+with kpi2:
+    if not demand_summary.empty and pd.notna(demand_summary["peak"].iloc[0]):
+        st.metric("Peak CISO demand (last 30 days)", f"{demand_summary['peak'].iloc[0]:,.0f} MWh")
+    else:
+        st.metric("Peak CISO demand", "—")
+with kpi3:
+    n = int(facility_count["n"].iloc[0]) if not facility_count.empty else 0
+    st.metric("Mapped facilities, Santa Clara County", f"{n}")
+
+st.divider()
 
 col1, col2 = st.columns(2)
 
@@ -62,6 +97,120 @@ with col2:
     else:
         fig = px.line(price_df, x="period", y="price", color="stateid")
         st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Correlation: consumption growth vs. price growth
+# ---------------------------------------------------------------------------
+st.subheader("Consumption Growth vs. Price Growth")
+st.caption(
+    "Both series indexed to % change from the first common month, so a "
+    "million-kWh consumption figure and a cents-per-kWh price figure can "
+    "be compared on the same axis."
+)
+
+corr_result = compute_demand_price_correlation(settings)
+if corr_result is None:
+    st.info(
+        "Not enough overlapping consumption/price data yet -- run "
+        "`python run_pipeline.py` first."
+    )
+else:
+    corr_col1, corr_col2 = st.columns([3, 1])
+    with corr_col1:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=corr_result.merged["period"],
+                y=corr_result.merged["sales_pct_change"],
+                name="Consumption (% change)",
+                line=dict(color="#60a5fa"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=corr_result.merged["period"],
+                y=corr_result.merged["price_pct_change"],
+                name="Price (% change)",
+                line=dict(color="#f97316"),
+            )
+        )
+        fig.update_layout(yaxis_title="% change from first period", legend=dict(orientation="h"))
+        st.plotly_chart(fig, use_container_width=True)
+    with corr_col2:
+        st.metric("Pearson correlation (r)", f"{corr_result.pearson_r:.2f}")
+        st.metric("p-value", f"{corr_result.p_value:.4f}")
+        st.metric("Total consumption change", f"{corr_result.sales_total_pct_change:+.1f}%")
+        st.metric("Total price change", f"{corr_result.price_total_pct_change:+.1f}%")
+        st.caption(f"Based on {corr_result.n_periods} months of overlapping data.")
+        if corr_result.p_value < 0.05:
+            direction = "positively" if corr_result.pearson_r > 0 else "negatively"
+            st.success(f"Statistically significant: consumption and price are {direction} correlated.")
+        else:
+            st.warning("Not statistically significant at p < 0.05 -- treat the r value with caution.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Forecast: projected retail price
+# ---------------------------------------------------------------------------
+st.subheader("Retail Price Forecast (next 24 months)")
+st.caption(
+    "Prophet time-series forecast fit on full monthly price history. "
+    "Shaded band is the model's 80% uncertainty interval, not a guarantee."
+)
+
+with st.spinner("Fitting forecast model..."):
+    forecast_result = forecast_retail_price(settings)
+
+if forecast_result is None:
+    st.info(
+        "Not enough price history yet for a forecast (need 2+ years) -- "
+        "run `python run_pipeline.py` first."
+    )
+else:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_result.forecast["ds"],
+            y=forecast_result.forecast["yhat_upper"],
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_result.forecast["ds"],
+            y=forecast_result.forecast["yhat_lower"],
+            fill="tonexty",
+            fillcolor="rgba(96,165,250,0.2)",
+            line=dict(width=0),
+            name="80% interval",
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_result.history["ds"],
+            y=forecast_result.history["y"],
+            name="Actual",
+            line=dict(color="#e5e7eb"),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_result.forecast["ds"],
+            y=forecast_result.forecast["yhat"],
+            name="Forecast",
+            line=dict(color="#60a5fa", dash="dash"),
+        )
+    )
+    fig.update_layout(yaxis_title="cents per kWh", legend=dict(orientation="h"))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
 
 st.subheader("Registered Industrial Facilities (EPA FRS)")
 facilities_df: pd.DataFrame = con.execute(
