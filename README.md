@@ -81,6 +81,17 @@ rundown of what came up and how it was handled:
   bug that looked like the code fixes weren't working, when really the
   old contaminated rows were still sitting in the database. Fixed by
   clearing each table before every load, so each run is a clean replace.
+- **The first version of the consumption-vs-price correlation was
+  quietly wrong**: computing Pearson correlation on raw monthly values
+  returned r≈0.00, which didn't square with a price series that visibly
+  triples over the period. The cause was consumption's strong 12-month
+  seasonal cycle (AC/heating load) swamping the underlying trend
+  relationship at monthly granularity — confirmed by testing the method
+  against synthetic data with a known, real trend built in, which still
+  returned a badly deflated r=0.17 at monthly resolution. Aggregating to
+  annual averages before correlating recovered the true relationship
+  (r=1.0 on the same synthetic test) — see Results below for what the
+  real data shows once fixed.
 
 ## Setup
 
@@ -132,28 +143,49 @@ Sustainability reports (manual) ────────────────
 - **`src/etl/load_warehouse.py`** + **`src/models/schema.sql`** — clears
   and reloads normalized data into a local DuckDB file (zero external
   services required to run this end to end).
+- **`src/analysis/`** — `correlation.py` (consumption-vs-price, annual
+  aggregation to avoid seasonal noise swamping the trend) and
+  `forecast.py` (Prophet-based price projection), both read straight
+  from the warehouse and are exercised by the dashboard.
 - **`dashboards/app.py`** — Streamlit dashboard (line charts + a pydeck
   map with hover tooltips) that reads *only* from DuckDB, never calls
   external APIs directly (see Security below).
 
 ## Results so far
 
-*(This section will fill in further as the correlation/forecasting work
-lands — current state below.)*
-
-- **CA retail electricity prices have nearly tripled since 2005**, with
-  a visibly steeper climb in the last few years — the era coinciding
-  with the recent wave of hyperscale data center buildout nationally.
-  The next step is quantifying this correlation directly (regional
-  demand growth vs. price growth, not just two charts sitting side by
-  side) rather than relying on visual coincidence.
+- **CA retail electricity prices have grown +249% since 2001** (full
+  history), with a visibly steeper climb in the last several years.
+- **CA electricity consumption (utility-reported "sales") has actually
+  *declined* ~16% over the same period**, not grown — likely reflecting
+  distributed rooftop solar being netted out of utility sales figures
+  plus efficiency gains, rather than any real drop in electricity use.
+- **Consumption and price are statistically significantly negatively
+  correlated: r = -0.50, p = 0.011, based on 25 full years of annual
+  data.** (Getting to a trustworthy number here took a real fix — see
+  "How I actually cleaned and ran everything" above; the naive monthly
+  correlation returned a meaningless r≈0.00 because consumption's
+  seasonal swings swamped the underlying trend.) This complicates the
+  intuitive "data centers → more demand → higher prices" hypothesis I
+  set out to test: metered demand hasn't grown, yet prices have nearly
+  tripled anyway. The more likely driver is fixed-cost recovery over a
+  shrinking sales base — utilities spread large fixed costs (grid
+  infrastructure, wildfire mitigation/liability) across fewer sold
+  kWh, pushing the per-kWh price up even without rising consumption. A
+  natural next step is checking this against actual utility cost-filing
+  data rather than inferring it from the correlation alone.
+- **A 24-month Prophet forecast on the price series tracks tightly
+  within its 80% confidence band across the full historical fit**,
+  projecting continued growth from roughly 26 to 33 cents/kWh by 2028
+  if the current trend holds.
 - **CISO hourly demand shows the expected daily double-peak pattern**
-  once correctly filtered to actual demand (`type=D`) — a clean baseline
-  to measure future growth against.
-- **358 TRI-reporting facilities are registered in Santa Clara County**,
-  visibly clustered around San Jose/Santa Clara/Sunnyvale — the same
-  geography as the historical semiconductor manufacturing footprint and
-  current data center siting pressure.
+  once correctly filtered to actual demand (`type=D`) — a clean
+  operational baseline, separate from the longer-run consumption trend
+  used in the correlation above.
+- **281 TRI-reporting facilities with valid coordinates are mapped in
+  Santa Clara County**, visibly clustered around San Jose, Santa Clara,
+  Sunnyvale, Mountain View, and Palo Alto — the same geography as the
+  historical semiconductor manufacturing footprint and current
+  data-center siting pressure.
 - **Open question I still want to answer**: whether the water-use side
   of the story (currently unpopulated) shows the same "efficiency
   improving while absolute consumption rises" pattern that's been
@@ -197,11 +229,9 @@ put real keys in a public repo, including in commit history.
 
 ## Roadmap / how this scales
 
-- Quantify the demand-vs-price correlation directly instead of showing
-  two separate charts.
-- Add a forecasting layer (Prophet is already in `requirements.txt`) to
-  project regional grid load under different data center growth
-  scenarios.
+- Check the price-growth-vs-fixed-cost-recovery hypothesis (see Results
+  above) against actual CA utility cost-filing data, rather than
+  inferring the mechanism from correlation alone.
 - Fill in `src/ingest/sustainability_reports.py` with real, cited
   water-use/PUE figures from company sustainability reports.
 - Swap `DEFAULT_BALANCING_AUTHORITY` in `run_pipeline.py` from `CISO`
@@ -212,6 +242,9 @@ put real keys in a public repo, including in commit history.
   connection-string change.
 - Add a scraper for the [Data Center Watch](https://datacenterwatch.org)
   tracker to quantify opposition project counts/dollar values by region.
+
+*(Done: consumption-vs-price correlation, and a Prophet-based price
+forecast — see `src/analysis/` and Results above.)*
 
 ## Data sources
 
