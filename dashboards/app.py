@@ -107,7 +107,10 @@ st.subheader("Consumption Growth vs. Price Growth")
 st.caption(
     "Both series indexed to % change from the first common month, so a "
     "million-kWh consumption figure and a cents-per-kWh price figure can "
-    "be compared on the same axis."
+    "be compared on the same axis. Chart shows monthly detail; the "
+    "correlation statistic (right) is computed on annual averages instead, "
+    "since consumption's seasonal swings would otherwise swamp the "
+    "underlying trend relationship at monthly granularity."
 )
 
 corr_result = compute_demand_price_correlation(settings)
@@ -143,7 +146,11 @@ else:
         st.metric("p-value", f"{corr_result.p_value:.4f}")
         st.metric("Total consumption change", f"{corr_result.sales_total_pct_change:+.1f}%")
         st.metric("Total price change", f"{corr_result.price_total_pct_change:+.1f}%")
-        st.caption(f"Based on {corr_result.n_periods} months of overlapping data.")
+        st.caption(
+            f"Correlation computed on {corr_result.n_years} full years of "
+            f"annual averages (to remove consumption's seasonal cycle); "
+            f"chart above shows {corr_result.n_periods} months for detail."
+        )
         if corr_result.p_value < 0.05:
             direction = "positively" if corr_result.pearson_r > 0 else "negatively"
             st.success(f"Statistically significant: consumption and price are {direction} correlated.")
