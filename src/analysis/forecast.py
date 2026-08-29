@@ -54,9 +54,6 @@ def forecast_retail_price(
     if len(history) < 24:
         return None  # need at least ~2 years of monthly data for a sane fit
 
-    # Imported lazily -- Prophet has a heavier import cost (pulls in
-    # cmdstanpy) and this module may be imported by the dashboard even
-    # when the forecast panel isn't being viewed.
     from prophet import Prophet
 
     model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)

@@ -1,8 +1,4 @@
 """
-Starter Streamlit dashboard reading from the local DuckDB warehouse.
-
-Run with: streamlit run dashboards/app.py
-
 This intentionally reads only from the warehouse (never calls the EIA/EPA
 APIs directly), so the dashboard never needs API keys at all -- only the
 pipeline that populates the warehouse does. That's a good security

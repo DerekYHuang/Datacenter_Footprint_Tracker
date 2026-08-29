@@ -3,9 +3,7 @@ Loads normalized DataFrames into a local DuckDB warehouse file.
 
 DuckDB is used here (rather than requiring a hosted Postgres/Snowflake)
 so the project runs entirely locally with zero external services beyond
-the public data APIs -- good for a portfolio project people can actually
-clone and run. The schema mirrors what you'd use in Snowflake/Postgres,
-so the migration story is straightforward if you want to demo that too.
+the public data APIs. 
 """
 
 from __future__ import annotations
