@@ -38,9 +38,7 @@ class SustainabilityEntry:
     notes: str = ""
 
 
-# Fill this in as you research each company's report. Left mostly empty
-# on purpose -- these are real numbers you should pull and cite yourself
-# rather than have fabricated for you.
+# Left mostly empty on purpose so that I can fill in more as I continue to do research on each company
 RAW_ENTRIES: list[SustainabilityEntry] = [
     # Example shape -- replace with real sourced figures:
     # SustainabilityEntry(

@@ -7,11 +7,11 @@ Free API key: https://www.eia.gov/opendata/register.php
 SECURITY NOTES:
 - The API key is read from Settings (which reads from .env), never
   hardcoded, never logged.
-- We send the key as a query parameter (that's how EIA's API works) but we
+- Send the key as a query parameter (that's how EIA's API works) but we
   strip it out before logging any URL -- see `_safe_url_for_logging`.
-- We use a timeout on every request so a hung connection can't stall the
+- Use a timeout on every request so a hung connection can't stall the
   pipeline indefinitely.
-- We use tenacity for bounded retries with backoff, so transient network
+- Use tenacity for bounded retries with backoff, so transient network
   errors don't turn into silent data gaps, but we also don't hammer EIA's
   servers -- max 4 attempts, exponential backoff.
 """
@@ -69,7 +69,6 @@ class EIAClient:
         )
 
         if response.status_code == 401:
-            # Deliberately don't include response body -- some APIs echo
             # back the invalid key in error messages.
             raise EIAClientError(
                 "EIA API returned 401 Unauthorized. Check that EIA_API_KEY "

@@ -17,7 +17,7 @@ confirmed-working request against it, and because TRI (facilities that
 report toxic chemical releases) is directly relevant to the
 semiconductor/data-center environmental angle of this project.
 
-We pull by state (guaranteed by the documented pattern) and filter to a
+I pull by state (guaranteed by the documented pattern) and filter to a
 county client-side in pandas, rather than guessing at whether county-level
 URL filtering is supported/how county names are cased in this table.
 """
