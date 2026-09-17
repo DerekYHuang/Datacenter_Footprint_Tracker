@@ -11,8 +11,12 @@ first (see README.md).
 from __future__ import annotations
 
 import datetime as dt
+from logging import Logger
+from typing import Callable
 
-from config.settings import get_settings
+import pandas as pd
+
+from config.settings import Settings, get_settings
 from src.etl.load_warehouse import (
     init_schema,
     load_eia_hourly_demand,
@@ -39,6 +43,23 @@ DEFAULT_STATE = "CA"
 DEFAULT_COUNTY = "Santa Clara"
 
 
+def _pull_and_load(
+    logger: Logger,
+    label: str,
+    fetch: Callable[[], pd.DataFrame],
+    normalize: Callable[[pd.DataFrame], pd.DataFrame],
+    load: Callable[[Settings, pd.DataFrame], None],
+    settings: Settings,
+) -> None:
+    """Fetch -> normalize -> load one source, with consistent logging.
+    Every source in this pipeline follows this exact shape, so this
+    replaces five near-identical fetch/normalize/load/log blocks."""
+    logger.info("Pulling %s...", label)
+    raw = fetch()
+    load(settings, normalize(raw))
+    logger.info("Loaded %d %s rows", len(raw), label)
+
+
 def main() -> None:
     settings = get_settings(require_eia=True)
     logger = get_logger("pipeline", settings.log_level)
@@ -48,37 +69,37 @@ def main() -> None:
 
     end = dt.datetime.now(dt.timezone.utc)
     start = end - dt.timedelta(days=30)
-    start_str = start.strftime("%Y-%m-%dT%H")
-    end_str = end.strftime("%Y-%m-%dT%H")
+    start_str, end_str = start.strftime("%Y-%m-%dT%H"), end.strftime("%Y-%m-%dT%H")
 
-    logger.info("Pulling EIA hourly demand for %s...", DEFAULT_BALANCING_AUTHORITY)
     eia = EIAClient(settings=settings)
-    raw_demand = eia.get_hourly_demand(DEFAULT_BALANCING_AUTHORITY, start_str, end_str)
-    load_eia_hourly_demand(settings, normalize_eia_hourly_demand(raw_demand))
-    logger.info("Loaded %d hourly demand rows", len(raw_demand))
-
-    logger.info("Pulling EIA retail price for %s...", DEFAULT_STATE)
-    raw_price = eia.get_retail_price(DEFAULT_STATE)
-    load_eia_retail_price(settings, normalize_eia_retail_price(raw_price))
-    logger.info("Loaded %d retail price rows", len(raw_price))
-
-    logger.info("Pulling EIA retail sales (consumption) for %s...", DEFAULT_STATE)
-    raw_sales = eia.get_retail_sales(DEFAULT_STATE)
-    load_eia_retail_sales(settings, normalize_eia_retail_sales(raw_sales))
-    logger.info("Loaded %d retail sales rows", len(raw_sales))
-
-    logger.info("Pulling EPA FRS facilities for %s County, %s...", DEFAULT_COUNTY, DEFAULT_STATE)
     envirofacts = EnvirofactsClient(settings=settings)
-    raw_facilities = envirofacts.get_facilities(
-        state_abbr=DEFAULT_STATE, county_name=DEFAULT_COUNTY
-    )
-    load_epa_frs_facilities(settings, normalize_epa_frs_facilities(raw_facilities))
-    logger.info("Loaded %d facility rows", len(raw_facilities))
 
-    logger.info("Loading manually-curated sustainability report entries...")
-    sustainability_df = load_sustainability_entries()
-    load_sustainability_metrics(settings, sustainability_df)
-    logger.info("Loaded %d sustainability metric rows", len(sustainability_df))
+    _pull_and_load(
+        logger, f"hourly demand for {DEFAULT_BALANCING_AUTHORITY}",
+        lambda: eia.get_hourly_demand(DEFAULT_BALANCING_AUTHORITY, start_str, end_str),
+        normalize_eia_hourly_demand, load_eia_hourly_demand, settings,
+    )
+    _pull_and_load(
+        logger, f"retail price for {DEFAULT_STATE}",
+        lambda: eia.get_retail_price(DEFAULT_STATE),
+        normalize_eia_retail_price, load_eia_retail_price, settings,
+    )
+    _pull_and_load(
+        logger, f"retail sales (consumption) for {DEFAULT_STATE}",
+        lambda: eia.get_retail_sales(DEFAULT_STATE),
+        normalize_eia_retail_sales, load_eia_retail_sales, settings,
+    )
+    _pull_and_load(
+        logger, f"TRI facilities for {DEFAULT_COUNTY} County, {DEFAULT_STATE}",
+        lambda: envirofacts.get_facilities(state_abbr=DEFAULT_STATE, county_name=DEFAULT_COUNTY),
+        normalize_epa_frs_facilities, load_epa_frs_facilities, settings,
+    )
+    _pull_and_load(
+        logger, "sustainability report entries",
+        load_sustainability_entries,
+        lambda df: df,  # already in warehouse shape, nothing to normalize
+        load_sustainability_metrics, settings,
+    )
 
     logger.info("Pipeline complete. Warehouse at: %s", settings.duckdb_path)
 
