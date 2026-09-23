@@ -1,9 +1,11 @@
 """
 Loads normalized DataFrames into a local DuckDB warehouse file.
 
-DuckDB is used here (rather than requiring a hosted Postgres/Snowflake)
-so the project runs entirely locally with zero external services beyond
-the public data APIs. 
+Each load clears the target table before inserting, so re-running the
+pipeline replaces the data rather than appending to it. Without this,
+repeated runs during development silently accumulate duplicate/stale rows
+(including data from before a bug fix), which looks like a fix "isn't
+working" when really old contaminated rows are still sitting in the table.
 """
 
 from __future__ import annotations
@@ -38,41 +40,36 @@ def _write(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame) -> None
     con.execute(f"INSERT INTO {table} SELECT * FROM tmp_df")
     con.unregister("tmp_df")
 
-def load_eia_hourly_demand(settings: Settings, df: pd.DataFrame) -> None:
+
+def load_table(settings: Settings, table: str, df: pd.DataFrame) -> None:
+    """Clear-and-replace load for a single warehouse table. All the named
+    load_* functions below are thin wrappers around this, so the
+    connect/write/close boilerplate exists in exactly one place."""
     con = duckdb.connect(settings.duckdb_path)
     try:
-        _write(con, "eia_hourly_demand", df)
+        _write(con, table, df)
     finally:
         con.close()
+
+
+# Named wrappers -- kept so call sites stay explicit about which table
+# they're loading (and so existing imports elsewhere don't need to change),
+# without each one repeating the connect/write/close pattern.
+def load_eia_hourly_demand(settings: Settings, df: pd.DataFrame) -> None:
+    load_table(settings, "eia_hourly_demand", df)
 
 
 def load_eia_retail_price(settings: Settings, df: pd.DataFrame) -> None:
-    con = duckdb.connect(settings.duckdb_path)
-    try:
-        _write(con, "eia_retail_price", df)
-    finally:
-        con.close()
+    load_table(settings, "eia_retail_price", df)
 
 
 def load_eia_retail_sales(settings: Settings, df: pd.DataFrame) -> None:
-    con = duckdb.connect(settings.duckdb_path)
-    try:
-        _write(con, "eia_retail_sales", df)
-    finally:
-        con.close()
+    load_table(settings, "eia_retail_sales", df)
 
 
 def load_epa_frs_facilities(settings: Settings, df: pd.DataFrame) -> None:
-    con = duckdb.connect(settings.duckdb_path)
-    try:
-        _write(con, "epa_frs_facilities", df)
-    finally:
-        con.close()
+    load_table(settings, "epa_frs_facilities", df)
 
 
 def load_sustainability_metrics(settings: Settings, df: pd.DataFrame) -> None:
-    con = duckdb.connect(settings.duckdb_path)
-    try:
-        _write(con, "sustainability_metrics", df)
-    finally:
-        con.close()
+    load_table(settings, "sustainability_metrics", df)

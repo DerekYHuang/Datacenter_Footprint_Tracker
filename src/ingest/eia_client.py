@@ -3,17 +3,6 @@ Client for the U.S. Energy Information Administration (EIA) API v2.
 
 Docs: https://www.eia.gov/opendata/documentation.php
 Free API key: https://www.eia.gov/opendata/register.php
-
-SECURITY NOTES:
-- The API key is read from Settings (which reads from .env), never
-  hardcoded, never logged.
-- Send the key as a query parameter (that's how EIA's API works) but we
-  strip it out before logging any URL -- see `_safe_url_for_logging`.
-- Use a timeout on every request so a hung connection can't stall the
-  pipeline indefinitely.
-- Use tenacity for bounded retries with backoff, so transient network
-  errors don't turn into silent data gaps, but we also don't hammer EIA's
-  servers -- max 4 attempts, exponential backoff.
 """
 
 from __future__ import annotations
@@ -34,7 +23,6 @@ REQUEST_TIMEOUT_SECONDS = 20
 
 
 def _safe_url_for_logging(url: str) -> str:
-    """Strip api_key query param before this URL ever touches a log line."""
     return re.sub(r"(api_key=)[^&]+", r"\1***REDACTED***", url)
 
 
@@ -69,7 +57,6 @@ class EIAClient:
         )
 
         if response.status_code == 401:
-            # back the invalid key in error messages.
             raise EIAClientError(
                 "EIA API returned 401 Unauthorized. Check that EIA_API_KEY "
                 "in your .env is valid (get one at eia.gov/opendata/register.php)."
@@ -89,10 +76,11 @@ class EIAClient:
         end: str,
     ) -> pd.DataFrame:
         """
-        Pull hourly electricity demand for a given balancing authority
-        (e.g. "CISO" for California ISO).
-
-        start/end format: "YYYY-MM-DDTHH" per EIA v2 conventions.
+        Pull hourly electricity DEMAND (not generation/interchange/
+        forecast) for a given balancing authority. This is a short-term
+        operational view (EIA only exposes recent history at hourly
+        granularity here) -- for long-run trend/correlation analysis, see
+        get_retail_sales() instead, which has monthly data back to 2001.
         """
         params = {
             "frequency": "hourly",
@@ -102,7 +90,7 @@ class EIAClient:
             # interchange (TI), and demand forecast (DF) in one endpoint,
             # distinguished only by this "type" facet. Without filtering
             # to "D", interchange's negative values get plotted as if
-            # they were part of the demand series.
+            # they were part of demand.
             "facets[type][]": "D",
             "start": start,
             "end": end,
@@ -122,21 +110,21 @@ class EIAClient:
             )
         df = pd.DataFrame(rows)
         if not df.empty:
-            df["pulled_at"] = pd.Timestamp.now('UTC')
+            df["pulled_at"] = pd.Timestamp.now("UTC")
         return df
 
-    def get_retail_price(
-        self,
-        state: str,
-        sector: str = "ALL",
+    def _get_monthly_retail_series(
+        self, data_field: str, state: str, sector: str
     ) -> pd.DataFrame:
         """
-        Monthly retail electricity price by state/sector (e.g. state="CA").
-        Useful for correlating data center buildout with rate changes.
+        Shared logic behind get_retail_price() and get_retail_sales() --
+        both hit the same /electricity/retail-sales/ endpoint with the
+        same facet/sort structure, differing only in which data field
+        they ask for (price vs. sales).
         """
         params = {
             "frequency": "monthly",
-            "data[0]": "price",
+            "data[0]": data_field,
             "facets[stateid][]": state,
             "facets[sectorid][]": sector,
             "sort[0][column]": "period",
@@ -148,37 +136,25 @@ class EIAClient:
         rows = payload.get("response", {}).get("data", [])
         df = pd.DataFrame(rows)
         if not df.empty:
-            df["pulled_at"] = pd.Timestamp.now('UTC')
+            df["pulled_at"] = pd.Timestamp.now("UTC")
         return df
+
+    def get_retail_price(self, state: str, sector: str = "ALL") -> pd.DataFrame:
+        """Monthly retail electricity price by state/sector, back to 2001."""
+        return self._get_monthly_retail_series("price", state, sector)
 
     def get_retail_sales(self, state: str, sector: str = "ALL") -> pd.DataFrame:
         """
         Monthly electricity CONSUMPTION (sales, in million kWh) by
-        state/sector, same endpoint as get_retail_price, different data
-        field. Used to correlate consumption growth against price growth
-        over the long run -- the hourly demand endpoint only covers ~30
-        days of recent history, not enough for a multi-year comparison.
+        state/sector, back to 2001 -- same endpoint as get_retail_price,
+        different data field. This is the long-run demand-growth series
+        used to correlate against price growth, since the hourly demand
+        endpoint only covers ~30 days of recent history.
         """
-        params = {
-            "frequency": "monthly",
-            "data[0]": "sales",
-            "facets[stateid][]": state,
-            "facets[sectorid][]": sector,
-            "sort[0][column]": "period",
-            "sort[0][direction]": "asc",
-            "offset": 0,
-            "length": 5000,
-        }
-        payload = self._get("/electricity/retail-sales/data/", params)
-        rows = payload.get("response", {}).get("data", [])
-        df = pd.DataFrame(rows)
-        if not df.empty:
-            df["pulled_at"] = pd.Timestamp.now('UTC')
-        return df
+        return self._get_monthly_retail_series("sales", state, sector)
 
 
 if __name__ == "__main__":
-    # Small manual smoke test. Run with: python -m src.ingest.eia_client
     from config.settings import get_settings
 
     settings = get_settings(require_eia=True)
